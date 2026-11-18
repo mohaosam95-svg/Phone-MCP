@@ -1,3 +1,4 @@
+
 name: Verify
 on:
   push:
@@ -37,6 +38,13 @@ jobs:
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
       - name: Install pinned Android SDK components
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Compile and lint the original Android source
+      - name: Compile debug APK, release APK, and lint
         working-directory: android
-        run: ./gradlew --no-daemon assembleRelease lintRelease
+        run: ./gradlew --no-daemon assembleDebug assembleRelease lintRelease
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-mcp-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
