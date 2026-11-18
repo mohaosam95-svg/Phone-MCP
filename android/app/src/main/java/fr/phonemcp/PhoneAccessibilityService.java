@@ -348,7 +348,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
     private void screenshot(String pkg,JSONObject args,Reply reply) throws Exception {
         if(!args.has("snapshotId")&&(args.optBoolean("annotate")||snapshotId==null||!pkg.equals(snapshotPackage)||SystemClock.elapsedRealtime()-snapshotTime>30000))snapshot(pkg,new JSONObject());
         if(args.has("snapshotId")&&(!args.getString("snapshotId").equals(snapshotId)||!pkg.equals(snapshotPackage)||SystemClock.elapsedRealtime()-snapshotTime>30000))throw new IllegalStateException("Screenshot observation expired.");
-        AccessibilityNodeInfo root = guard(pkg,"capture");
+        AccessibilityNodeInfo root = guard(pkg,"capture",snapshotWindow);
         int window = root.getWindowId(); Rect bounds = new Rect(); root.getBoundsInScreen(bounds);
         final Rect captureBounds=new Rect(bounds);
         if(Build.VERSION.SDK_INT>=34)for(AccessibilityWindowInfo w:getWindows()){try{if(w.getId()==window)w.getBoundsInScreen(captureBounds);}finally{w.recycle();}}
@@ -363,7 +363,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
             @Override public void onSuccess(ScreenshotResult result) {
                 HardwareBuffer buffer = result.getHardwareBuffer(); Bitmap bitmap = null, software = null, cropped = null, resized = null;
                 try {
-                    AccessibilityNodeInfo current = guard(pkg,"capture");
+                    AccessibilityNodeInfo current = guard(pkg,"capture",snapshotWindow);
                     try {
                         if (generation != requestedGeneration || current.getWindowId() != window || containsPassword(current,new int[]{0},0))
                             throw new IllegalStateException("L’écran a changé pendant la capture. Réessayez.");
@@ -376,7 +376,7 @@ public final class PhoneAccessibilityService extends AccessibilityService {
                         if (!bounds.intersect(0,0,software.getWidth(),software.getHeight()) || bounds.isEmpty()) throw new IllegalStateException("Zone d’app invalide");
                         cropped = Bitmap.createBitmap(software,bounds.left,bounds.top,bounds.width(),bounds.height());
                     } else cropped = software;
-                    AccessibilityNodeInfo visual=guard(pkg,"capture");boolean visualReady;
+                    AccessibilityNodeInfo visual=guard(pkg,"capture",snapshotWindow);boolean visualReady;
                     try{Point size=new Point();getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY).getRealSize(size);visualReady=window==snapshotWindow&&pkg.equals(snapshotPackage)&&coordinateGuard.visual(CoordinateObservation.frame(visual,0,size.x,size.y),SystemClock.elapsedRealtime());}finally{visual.recycle();}
                     reply.done(CaptureFormatter.encode(cropped,args,pager.nodes(),captureBounds.left,captureBounds.top,0).put("snapshotId",snapshotId==null?JSONObject.NULL:snapshotId).put("visualGestureReady",visualReady).put("visualMaxAgeMs",CoordinateGuard.MAX_VISUAL_AGE_MS),null);
                 } catch (Exception error) { reply.done(null,error.getMessage()); }
