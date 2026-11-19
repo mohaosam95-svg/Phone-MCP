@@ -10,6 +10,12 @@ const summary=error=>String(error?.message??error).slice(0,500);
 /** Inspect an idempotent session before opening: repeating the macro never reopens its app. */
 export async function startApp(command,args){
  const sessionId=args.requestId,selected={packageName:args.packageName,sessionId,_ownerKey:args._ownerKey};
+ const status=await command('status',{});
+ if(status?.controlMode==='foreground'){
+  const opened=await command('open_app',{packageName:args.packageName});
+  return {...opened,packageName:args.packageName,sessionCreated:false,opened:true,reused:false,controlMode:'foreground'};
+ }
+ if(status?.controlMode!=='parallel')throw Error('Phone screen control is not ready. Select foreground control on the phone and keep the device unlocked.');
  const inventory=await command('session_list',{_ownerKey:args._ownerKey});
  if(!Array.isArray(inventory?.sessions))throw Error('Invalid owned session inventory.');
  const existing=inventory.sessions.find(s=>s.sessionId===sessionId);

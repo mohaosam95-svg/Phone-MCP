@@ -15,17 +15,29 @@ test('fast schemas refuse unbounded steps, changed scope, arbitrary operations a
 });
 
 test('start app combines owned creation, one launch, observation and unchanged-quality image into one host call',async t=>{
- const events=[];const c=await client(t,async(op,args)=>{events.push({op,args});if(op==='session_list')return {sessions:[]};if(op==='session_create')return {created:true,session:{packageName,sessionId}};if(op==='open_app')return {packageName,sessionId,opened:true};if(op==='snapshot')return frame();return {...frame(),mimeType:'image/jpeg',data:'AA=='};});
- const r=await c.callTool({name:'phone_start_app',arguments:{packageName,requestId:sessionId,settleMs:0,maxDimension:1920,quality:95}}),b=result(r);assert.equal(r.isError,undefined);assert.equal(b.opened,true);assert.equal(b.sessionId,sessionId);assert.deepEqual(events.map(x=>x.op),['session_list','session_create','open_app','snapshot','screenshot']);assert.equal(events.at(-1).args.quality,95);assert.equal(events.at(-1).args.maxDimension,1920);assert.equal(r.content[0].type,'image');assert.equal(b.relayTiming.deviceCommands,5);assert.equal(b.relayTiming.modelTimeIncluded,false);assert.ok(events.every(e=>e.args._ownerKey===events[0].args._ownerKey));
+ const events=[];const c=await client(t,async(op,args)=>{events.push({op,args});if(op==='status')return {controlMode:'parallel'};if(op==='session_list')return {sessions:[]};if(op==='session_create')return {created:true,session:{packageName,sessionId}};if(op==='open_app')return {packageName,sessionId,opened:true};if(op==='snapshot')return frame();return {...frame(),mimeType:'image/jpeg',data:'AA=='};});
+ const r=await c.callTool({name:'phone_start_app',arguments:{packageName,requestId:sessionId,settleMs:0,maxDimension:1920,quality:95}}),b=result(r);assert.equal(r.isError,undefined);assert.equal(b.opened,true);assert.equal(b.sessionId,sessionId);assert.deepEqual(events.map(x=>x.op),['status','session_list','session_create','open_app','snapshot','screenshot']);assert.equal(events.at(-1).args.quality,95);assert.equal(events.at(-1).args.maxDimension,1920);assert.equal(r.content[0].type,'image');assert.equal(b.relayTiming.deviceCommands,6);assert.equal(b.relayTiming.modelTimeIncluded,false);const scoped=events.filter(e=>e.op!=='status');assert.ok(scoped.every(e=>e.args._ownerKey===scoped[0].args._ownerKey));
 });
 
 test('repeating start inspects same owned session without another create/open or resetting app state',async()=>{
- const events=[],r=await startApp(async(op,args)=>{events.push(op);return {sessions:[{packageName,sessionId,state:'active'}]};},{...selected,requestId:sessionId});assert.equal(r.reused,true);assert.equal(r.opened,false);assert.deepEqual(events,['session_list']);
- await assert.rejects(startApp(async()=>({sessions:[{packageName:'com.other',sessionId}]}),{...selected,requestId:sessionId}),/different application/);
+ const events=[],r=await startApp(async(op,args)=>{events.push(op);if(op==='status')return {controlMode:'parallel'};return {sessions:[{packageName,sessionId,state:'active'}]};},{...selected,requestId:sessionId});assert.equal(r.reused,true);assert.equal(r.opened,false);assert.deepEqual(events,['status','session_list']);
+ await assert.rejects(startApp(async(op)=>op==='status'?{controlMode:'parallel'}:{sessions:[{packageName:'com.other',sessionId}]},{...selected,requestId:sessionId}),/different application/);
 });
 
 test('launch failure preserves the known session and reports uncertainty without any retry or cleanup of other work',async()=>{
- const events=[],r=await startApp(async op=>{events.push(op);if(op==='session_list')return {sessions:[]};if(op==='session_create')return {session:{packageName,sessionId}};throw Error('network uncertain');},{...selected,requestId:sessionId});assert.equal(r.launchUncertain,true);assert.equal(r.sessionId,sessionId);assert.deepEqual(events,['session_list','session_create','open_app']);
+ const events=[],r=await startApp(async op=>{events.push(op);if(op==='status')return {controlMode:'parallel'};if(op==='session_list')return {sessions:[]};if(op==='session_create')return {session:{packageName,sessionId}};throw Error('network uncertain');},{...selected,requestId:sessionId});assert.equal(r.launchUncertain,true);assert.equal(r.sessionId,sessionId);assert.deepEqual(events,['status','session_list','session_create','open_app']);
+});
+
+test('foreground start opens app directly without creating a parallel session',async()=>{
+ const events=[];
+ const r=await startApp(async(op,args)=>{events.push(op);if(op==='status')return {controlMode:'foreground'};if(op==='open_app')return {packageName,opened:true};throw Error('Unexpected operation '+op);},{...selected,requestId:sessionId});
+ assert.equal(r.opened,true);assert.equal(r.controlMode,'foreground');assert.deepEqual(events,['status','open_app']);
+});
+
+test('notifications mode refuses app launch without attempting session operations',async()=>{
+ const events=[];
+ await assert.rejects(startApp(async op=>{events.push(op);return {controlMode:'notifications'};},{...selected,requestId:sessionId}),/screen control is not ready/);
+ assert.deepEqual(events,['status']);
 });
 
 test('semantic flow executes exact fresh targets then a single final observation and image',async t=>{
